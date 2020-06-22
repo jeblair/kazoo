@@ -158,6 +158,10 @@ class KazooTestHarness(unittest.TestCase):
     def servers(self):
         return ",".join([s.address for s in self.cluster])
 
+    @property
+    def secure_servers(self):
+        return ",".join([s.secure_address for s in self.cluster])
+
     def _get_nonchroot_client(self):
         c = KazooClient(self.servers)
         self._clients.append(c)
@@ -193,7 +197,10 @@ class KazooTestHarness(unittest.TestCase):
         if do_start:
             self.cluster.start()
         namespace = "/kazootests" + uuid.uuid4().hex
-        self.hosts = self.servers + namespace
+        if client_options.get('use_ssl'):
+            self.hosts = self.secure_servers + namespace
+        else:
+            self.hosts = self.servers + namespace
         if 'timeout' not in client_options:
             client_options['timeout'] = self.DEFAULT_CLIENT_TIMEOUT
         self.client = self._get_client(**client_options)

@@ -1,5 +1,7 @@
+import os
 import socket
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -9,7 +11,7 @@ import mock
 from mock import patch
 import pytest
 
-from kazoo.testing import KazooTestCase
+from kazoo.testing import KazooTestCase, sslfixtures
 from kazoo.exceptions import (
     AuthFailedError,
     BadArgumentsError,
@@ -26,7 +28,7 @@ from kazoo.exceptions import (
 )
 from kazoo.protocol.connection import _CONNECTION_DROP
 from kazoo.protocol.states import KeeperState, KazooState
-from kazoo.tests.util import TRAVIS_ZK_VERSION
+from kazoo.tests.util import TRAVIS_ZK_VERSION, ZK_VERSION
 
 
 if sys.version_info > (3, ):  # pragma: nocover
@@ -1155,6 +1157,33 @@ class TestClient(KazooTestCase):
                 result.get()
         finally:
             client.stop()
+
+
+class TestSSLClient(KazooTestCase):
+    def setUp(self):
+        ssl_path = tempfile.mkdtemp()
+        key_path = os.path.join(ssl_path, 'key.pem')
+        cert_path = os.path.join(ssl_path, 'cert.pem')
+        cacert_path = os.path.join(ssl_path, 'cacert.pem')
+        with open(key_path, 'w') as key_file:
+            key_file.write(sslfixtures.client_key)
+        with open(cert_path, 'w') as cert_file:
+            cert_file.write(sslfixtures.client_cert)
+        with open(cacert_path, 'w') as cacert_file:
+            cacert_file.write(sslfixtures.ca_cert)
+        if ZK_VERSION and ZK_VERSION < (3, 5):
+            pytest.skip("Must use Zookeeper 3.5 or above")
+        self.setup_zookeeper(
+            use_ssl=True,
+            keyfile=key_path,
+            certfile=cert_path,
+            ca=cacert_path)
+
+    def test_create(self):
+        client = self.client
+        path = client.create("/1")
+        assert path == "/1"
+        assert client.exists("/1")
 
 
 dummy_dict = {

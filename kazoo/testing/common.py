@@ -33,6 +33,8 @@ import subprocess
 import tempfile
 import traceback
 
+from kazoo.testing import sslfixtures
+
 
 log = logging.getLogger(__name__)
 
@@ -63,7 +65,8 @@ def to_java_compatible_path(path):
 
 ServerInfo = namedtuple(
     "ServerInfo",
-    "server_id client_port election_port leader_port admin_port peer_type")
+    "server_id client_port secure_client_port "
+    "election_port leader_port admin_port peer_type")
 
 
 class ManagedZooKeeper(object):
@@ -105,6 +108,8 @@ class ManagedZooKeeper(object):
         log_path = os.path.join(self.working_path, "log")
         log4j_path = os.path.join(self.working_path, "log4j.properties")
         data_path = os.path.join(self.working_path, "data")
+        truststore_path = os.path.join(self.working_path, "cacert.pem")
+        keystore_path = os.path.join(self.working_path, "keystore.pem")
 
         # various setup steps
         if not os.path.exists(self.working_path):
@@ -114,18 +119,31 @@ class ManagedZooKeeper(object):
         if not os.path.exists(data_path):
             os.mkdir(data_path)
 
+        with open(truststore_path, "w") as truststore:
+            truststore.write(sslfixtures.ca_cert)
+        with open(keystore_path, "w") as keystore:
+            keystore.write(sslfixtures.server_cert)
+            keystore.write(sslfixtures.server_key)
+
         with open(config_path, "w") as config:
             config.write("""
 tickTime=2000
 dataDir=%s
 clientPort=%s
+secureClientPort=%s
 maxClientCnxns=0
 admin.serverPort=%s
+serverCnxnFactory=org.apache.zookeeper.server.NettyServerCnxnFactory
 authProvider.1=org.apache.zookeeper.server.auth.SASLAuthenticationProvider
+ssl.keyStore.location=%s
+ssl.trustStore.location=%s
 %s
 """ % (to_java_compatible_path(data_path),
        self.server_info.client_port,
+       self.server_info.secure_client_port,
        self.server_info.admin_port,
+       keystore_path,
+       truststore_path,
        "\n".join(self.configuration_entries)))  # NOQA
 
         # setup a replicated setup if peers are specified
@@ -202,6 +220,9 @@ log4j.appender.ROLLINGFILE.File=""" + to_java_compatible_path(  # NOQA
         # Check for a release - top-level zookeeper-*.jar?
         jars = glob((os.path.join(
             self.install_path, 'zookeeper-*.jar')))
+        # Later releases put zookeeper.jar in lib/
+        libjars = glob((os.path.join(
+            self.install_path, 'lib', 'zookeeper-*.jar')))
         if jars:
             # Release build (`ant package`)
             jars.extend(glob(os.path.join(
@@ -217,6 +238,11 @@ log4j.appender.ROLLINGFILE.File=""" + to_java_compatible_path(  # NOQA
             jars.extend(glob(os.path.join(
                 self.install_path,
                 "slf4j-log4j*.jar")))
+        elif libjars:
+            # Release build (`ant package`)
+            jars.extend(glob(os.path.join(
+                self.install_path,
+                "lib/*.jar")))
         else:
             # Development build (plain `ant`)
             jars = glob((os.path.join(
@@ -233,12 +259,21 @@ log4j.appender.ROLLINGFILE.File=""" + to_java_compatible_path(  # NOQA
         return "%s:%s" % (self.host, self.client_port)
 
     @property
+    def secure_address(self):
+        """Get the address of the SSL ZooKeeper instance."""
+        return "%s:%s" % (self.host, self.secure_client_port)
+
+    @property
     def running(self):
         return self._running
 
     @property
     def client_port(self):
         return self.server_info.client_port
+
+    @property
+    def secure_client_port(self):
+        return self.server_info.secure_client_port
 
     def reset(self):
         """Stop the zookeeper instance, cleaning out its on disk-data."""
@@ -291,7 +326,7 @@ class ZookeeperCluster(object):
             else:
                 peer_type = 'participant'
             info = ServerInfo(server_id, port, port + 1, port + 2, port + 3,
-                              peer_type)
+                              port + 4, peer_type)
             peers.append(info)
             port += 10
 
