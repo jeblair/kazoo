@@ -400,6 +400,7 @@ class KazooClient(object):
 
     def _reset(self):
         """Resets a variety of client states for a new connection."""
+        self.logger.log(BLATHER, "Reseting the client")
         self._queue = deque()
         self._pending = deque()
 
@@ -717,6 +718,7 @@ class KazooClient(object):
             return
 
         self._stopped.set()
+        self.logger.log(BLATHER, "Sending CloseInstance")
         self._queue.append((CloseInstance, None))
         try:
             self._connection._write_sock.send(b"\0")

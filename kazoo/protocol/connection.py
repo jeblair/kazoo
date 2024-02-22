@@ -619,7 +619,7 @@ class ConnectionHandler(object):
             self.ping_outstanding.clear()
             last_send = time.monotonic()
             with self._socket_error_handling():
-                while not self.client._stopped.is_set():
+                while True:
                     # Watch for something to read or send
                     jitter_time = random.randint(1, 40) / 100.0
                     deadline = last_send + read_timeout / 2.0 - jitter_time
@@ -645,6 +645,7 @@ class ConnectionHandler(object):
                         # may choke out the requests.  See PR#633.
                         if self._read_sock in s:
                             self._send_request(read_timeout, connect_timeout)
+                            time.sleep(1)
                             # Requests act as implicit pings.
                             last_send = time.monotonic()
                             continue
